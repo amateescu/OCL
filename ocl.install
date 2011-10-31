@@ -1,0 +1,215 @@
+<?php
+
+/**
+ * @file
+ * Install, update and uninstall functions for the OCL module.
+ */
+
+/**
+ * Implements hook_schema().
+ */
+function ocl_schema() {
+  $schema['ocl'] = array(
+    'description' => 'Stores global information for each list.',
+//    'export' => array(
+//      'key' => 'name',
+//      'key name' => 'Name',
+//      'primary key' => 'list_id',
+//      'identifier' => 'list',
+//      'default hook' => 'ocl_default_lists',
+//      'export type string' => 'ctools_type',
+//      'load callback' => 'ocl_load_by_name',
+//      'save callback' => 'ocl_save',
+//      'api' => array(
+//        'owner' => 'ocl',
+//        'api' => 'default_ocl_ocl',  // Base name for api include files.
+//        'minimum_version' => 1,
+//        'current_version' => 1,
+//      ),
+//    ),
+    'fields' => array(
+      'list_id' => array(
+        'type' => 'serial',
+        'not null' => TRUE,
+        'description' => 'Primary Key: Unique list ID.',
+//        'no export' => TRUE,
+      ),
+      'name' => array(
+        'type' => 'varchar',
+        'length' => 255,
+        'not null' => TRUE,
+        'default' => '',
+        'description' => 'The machine-readable name of this list.',
+      ),
+      'parent_name' => array(
+        'type' => 'varchar',
+        'length' => 255,
+        'not null' => FALSE,
+        'default' => NULL,
+        'description' => 'The machine-readable name of the parent list.',
+      ),
+      'type' => array(
+        'type' => 'varchar',
+        'length' => 255,
+        'not null' => TRUE,
+        'default' => '',
+        'description' => 'The type (bundle) of this list.',
+      ),
+      'label' => array(
+        'type' => 'varchar',
+        'length' => 255,
+        'not null' => TRUE,
+        'default' => '',
+        'description' => 'The human-readable name of this list.',
+      ),
+      'sublist_label' => array(
+        'type' => 'varchar',
+        'length' => 255,
+        'not null' => TRUE,
+        'description' => 'The human-readable name of sublists.',
+      ),
+      'min_size' => array(
+        'type' => 'int',
+        'unsigned' => TRUE,
+        'not null' => TRUE,
+        'default' => 0,
+        'description' => 'The minimum number of entities this list will hold.',
+      ),
+      'max_size' => array(
+        'type' => 'int',
+        'unsigned' => TRUE,
+        'not null' => TRUE,
+        'default' => 0,
+        'description' => 'The maximum number of entities this list will hold.',
+      ),
+      'status' => array(
+        'type' => 'int',
+        'not null' => TRUE,
+        'default' => 0x01,
+        'size' => 'tiny',
+        'description' => 'The exportable status of this list.',
+      ),
+      'module' => array(
+        'type' => 'varchar',
+        'length' => 255,
+        'not null' => TRUE,
+        'description' => 'The name of the module that created this list.',
+      ),
+      'uid' => array(
+        'type' => 'int',
+        'unsigned' => TRUE,
+        'not null' => FALSE,
+        'default' => NULL,
+        'description' => "The {users}.uid who created this list.",
+      ),
+    ),
+    'primary key' => array('list_id'),
+    'unique keys' => array(
+      'name' => array('name'),
+    ),
+    'indexes' => array(
+      'parent_name' => array('parent_name'),
+      'type' => array('type'),
+      'status' => array('status'),
+      'module' => array('module'),
+      'uid' => array('uid'),
+    ),
+  );
+
+//  $schema['cache_entity_ocl'] = drupal_get_schema_unprocessed('system', 'cache');
+//  $schema['cache_entity_ocl']['description'] = t('Cache table for the Orderable content list module.');
+
+  return $schema;
+}
+
+/**
+ * Implements hook_install().
+ */
+function ocl_install() {
+  // Add an entityreference field to ocl bundles.
+  foreach (ocl_type_get_name() as $type => $name) {
+    _ocl_create_entityreference_instance('ocl_entity', 'ocl', $type, t('List items'), 0);
+  }
+}
+
+/**
+ * Implements hook_uninstall().
+ */
+function ocl_uninstall() {
+  // Delete the ocl_entity field.
+  field_delete_field('ocl_entity');
+
+  // @todo: Remove our variables.
+}
+
+/**
+ * Creates a required, locked instance of a entityreference field on the
+ * specified bundle.
+ *
+ * @param $field_name
+ *   The name of the field; if it already exists, a new instance of the existing
+ *   field will be created.
+ * @param $entity_type
+ *   The type of entity the field instance will be attached to.
+ * @param $bundle
+ *   The bundle name of the entity the field instance will be attached to.
+ * @param $label
+ *   The label of the field instance.
+ * @param $weight
+ *   The default weight of the field instance widget and display.
+ * @param $display
+ *   An array of default display data used for the entity's current view modes.
+ */
+function _ocl_create_entityreference_instance($field_name, $entity_type, $bundle, $label, $weight = 0, $display = array()) {
+  // If a field type we know should exist isn't found, clear the Field cache.
+  if (!field_info_field_types('entityreference')) {
+    field_cache_clear();
+  }
+
+  // Look for or add the specified entityreference field to the requested entity
+  // bundle.
+  $field = field_info_field($field_name);
+  $instance = field_info_instance($entity_type, $field_name, $bundle);
+
+  if (empty($field)) {
+    $field = array(
+      'field_name' => $field_name,
+      'type' => 'entityreference',
+      'cardinality' => FIELD_CARDINALITY_UNLIMITED,
+      'entity_types' => array($entity_type),
+      'translatable' => FALSE,
+      'locked' => TRUE,
+      'settings' => array(
+        'target_type' => $bundle,
+      ),
+    );
+    $field = field_create_field($field);
+  }
+
+  if (empty($instance)) {
+    $instance = array(
+      'field_name' => $field_name,
+      'entity_type' => $entity_type,
+      'bundle' => $bundle,
+
+      'label' => $label,
+      'required' => FALSE,
+      'settings' => array(
+        'target_type' => $bundle,
+      ),
+
+      'widget' => array(
+        'type' => 'entityreference_autocomplete',
+        'weight' => $weight,
+        'settings' => array(
+          'match_operator' => 'CONTAINS',
+          'size' => 60,
+          'path' => '',
+        ),
+      ),
+
+      'display' => array(),
+    );
+    field_create_instance($instance);
+  }
+}

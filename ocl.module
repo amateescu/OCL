@@ -1,0 +1,271 @@
+<?php
+
+/**
+ * @file
+ * Allows users to collect entities in an arbitrarily ordered list.
+ */
+
+//function ocl_ctools_plugin_directory($module, $plugin) {
+//  if ($module == 'ctools' && $plugin == 'export_ui') {
+//    return 'plugins/' . $plugin;
+//  }
+//}
+
+/**
+ * Implements hook_menu().
+ */
+function ocl_menu() {
+  $items = array();
+
+//  $base = array(
+//    'access callback' => 'user_access',
+//    'access arguments' => array('administer ocl'),
+//    'file' => 'includes/ocl.admin.inc',
+//  );
+//
+//  $items['admin/structure/ocl'] = array(
+//    'title' => 'Add new list',
+//    'page callback' => 'ocl_add_page',
+//    'type' => MENU_LOCAL_ACTION,
+//  ) + $base;
+//  $items['admin/structure/ocl/add'] = array(
+//    'title' => 'Add new list',
+//    'page callback' => 'ocl_add_page',
+//    'type' => MENU_LOCAL_ACTION,
+//  ) + $base;
+}
+
+/**
+ * Implements hook_entity_info().
+ */
+function ocl_entity_info() {
+  $return = array(
+    'ocl' => array(
+      'label' => t('List'),
+      'plural label' => t('Lists'),
+      'entity class' => 'OCL',
+      'controller class' => 'OclEntityController',
+      'module' => 'ocl',
+      'base table' => 'ocl',
+      'load hook' => 'ocl_load',
+      'uri callback' => 'ocl_uri',
+      'fieldable' => TRUE,
+      'exportable' => TRUE,
+      'entity keys' => array(
+        'id' => 'list_id',
+        'bundle' => 'type',
+        'name' => 'name',
+        'label' => 'label',
+      ),
+      'bundles' => array(),
+      'bundle keys' => array(
+        'bundle' => 'type',
+      ),
+      'view modes' => array(
+        'full' => array(
+          'label' => t('List'),
+          'custom settings' => TRUE,
+        ),
+      ),
+      'metadata controller class' => '',
+      'access callback' => 'ocl_access',
+//      'access arguments' => array(
+//        'user key' => 'uid',
+//        'access tag' => 'ocl_access',
+//      ),
+//      'permission labels' => array(
+//        'singular' => t('list'),
+//        'plural' => t('lists'),
+//      ),
+      'export' => array(
+        'default hook' => 'ocl_default_lists'
+      ),
+      'admin ui' => array(
+        'path' => 'admin/structure/ocl',
+        'file' => 'includes/ocl.admin.inc',
+//        'controller class' => 'OclUIController',
+      ),
+    ),
+  );
+
+  foreach (ocl_type_get_name() as $type => $name) {
+    $return['ocl']['bundles'][$type] = array(
+      'label' => $name,
+    );
+  }
+
+  // Support entity cache module.
+  if (module_exists('entitycache')) {
+    $return['ocl']['field cache'] = FALSE;
+    $return['ocl']['entity cache'] = TRUE;
+  }
+
+  return $return;
+}
+
+/**
+ * Access callback for the entity API.
+ */
+function ocl_access($op, $type = NULL, $account = NULL) {
+  return TRUE;
+//  return user_access('administer profile types', $account);
+}
+
+
+/**
+ * Returns an initialized list object.
+ *
+ * @param $type
+ *   The machine-readable type of the list.
+ *
+ * @return
+ *   A list object with all default fields initialized.
+ */
+function ocl_new($type = 'node') {
+  return entity_get_controller('ocl')->create(array('type' => $type));
+}
+
+/**
+ * Saves a list.
+ *
+ * @param $list
+ *   The full list object to save.
+ *
+ * @return
+ *   SAVED_NEW or SAVED_UPDATED depending on the operation performed.
+ */
+function ocl_save($list) {
+  return entity_get_controller('ocl')->save($list);
+}
+
+/**
+ * Loads a list by ID.
+ */
+function ocl_load($list_id) {
+  if (empty($list_id)) {
+    return FALSE;
+  }
+
+  $lists = ocl_load_multiple(array($list_id));
+  return $lists ? reset($lists) : FALSE;
+}
+
+/**
+ * Loads a list by name.
+ */
+function ocl_load_by_name($name) {
+  $lists = ocl_load_multiple(array(), array('name' => $name));
+  return $lists ? reset($lists) : FALSE;
+}
+
+/**
+ * Loads multiple lists by ID or based on a set of matching conditions.
+ *
+ * @see entity_load()
+ *
+ * @param $list_ids
+ *   An array of list IDs.
+ * @param $conditions
+ *   An array of conditions on the {commerce_product} table in the form
+ *     'field' => $value.
+ * @param $reset
+ *   Whether to reset the internal list loading cache.
+ *
+ * @return
+ *   An array of list objects indexed by list_id.
+ */
+function ocl_load_multiple($list_ids = array(), $conditions = array(), $reset = FALSE) {
+  if (empty($list_ids) && empty($conditions)) {
+    return array();
+  }
+
+  // Entity API doesn't like $conditions, so we have to use EFQ to get an array
+  // of list ids.
+  if (!empty($conditions)) {
+    $query = new EntityFieldQuery();
+    $query->entityCondition('entity_type', 'ocl', '=');
+
+    if (!empty($list_ids)) {
+      $query->entityCondition('list_id', $list_ids, 'IN');
+    }
+
+    foreach ($conditions as $name => $value) {
+      $query->entityCondition($name, $value, '=');
+    }
+
+    $result = $query->execute();
+    if (!empty($result['ocl'])) {
+      $list_ids = array_keys($result['ocl']);
+    }
+  }
+
+  return entity_load('ocl', $list_ids, array(), $reset);
+}
+
+/**
+ * Returns an array of list types (bundles), keyed by name.
+ */
+function ocl_type_get_name() {
+  return array(
+    'node' => 'Node',
+    'user' => 'User',
+  );
+}
+
+
+
+/**
+ * Main class for list entities.
+ */
+class OCL extends Entity {
+  public $name;
+  public $type = 'node';
+  public $label;
+  public $sublist_label;
+  public $module = 'ocl';
+  
+  public function __construct($values = array()) {
+    if (!isset($values['type'])) {
+      $values['type'] = $this->type;
+    }
+
+    parent::__construct($values, 'ocl');
+  }
+
+  /**
+   * Returns whether the list is locked, thus may not be deleted or renamed.
+   *
+   * Lists provided in code are automatically treated as locked, as well
+   * as any fixed list.
+   */
+  public function isLocked() {
+    return isset($this->status) && empty($this->is_new) && (($this->status & ENTITY_IN_CODE) || ($this->status & ENTITY_FIXED));
+  }
+}
+
+
+/**
+ * Implements hook_ocl_default_lists().
+ */
+function ocl_ocl_default_lists() {
+  $lists = array();
+
+  $lists['nodequeue'] = entity_import('ocl',
+    '{
+      "name" : "nodequeue",
+      "type" : "user",
+      "label" : "nodequeue",
+      "sublist_label" : "nodequeue",
+      "parent_name" : null,
+      "min_size" : "0",
+      "max_size" : "0",
+      "uid" : "1",
+      "rdf_mapping" : []
+    }');
+
+  return $lists;
+}
+
+function ocl_form_alter(&$form, &$form_state, $form_id) {
+//  dsm($form_id);
+}
