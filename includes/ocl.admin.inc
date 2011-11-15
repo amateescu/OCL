@@ -6,20 +6,173 @@
 class OclUIController extends EntityDefaultUIController {
 
   /**
-   * Overrides hook_menu() defaults.
+   * Overrides EntityDefaultUIController::hook_menu().
    */
   public function hook_menu() {
     $items = parent::hook_menu();
+
+    $id_count = count(explode('/', $this->path));
+    $wildcard = isset($this->entityInfo['admin ui']['menu wildcard']) ? $this->entityInfo['admin ui']['menu wildcard'] : '%entity_object';
+    $plural_label = isset($this->entityInfo['plural label']) ? $this->entityInfo['plural label'] : $this->entityInfo['label'] . 's';
+
     $items[$this->path]['description'] = 'Manage orderable content lists.';
+
+    $items[$this->path . '/lists'] = array(
+      'title' => $plural_label,
+      'type' => MENU_DEFAULT_LOCAL_TASK,
+      'weight' => -10,
+    );
+
+    $items[$this->path . '/types'] = array(
+      'title' => $this->entityInfo['label'] . ' types',
+      'page callback' => 'ocl_overview_types',
+      'page arguments' => array($this->entityType),
+      'access arguments' => array('administer content types'),
+//      'access arguments' => array('administer ocl types'),
+      'type' => MENU_LOCAL_TASK,
+      'file' => $this->entityInfo['admin ui']['file'],
+      'file path' => drupal_get_path('module', $this->entityInfo['module']),
+    );
+    $items[$this->path . '/types/manage/%'] = array(
+      'title' => 'Manage list types',
+      'description' => 'Manage settings for the type of lists used on your site.',
+    );
+
+    // Add the list configure form.
+    $items[$this->path . '/manage/' . $wildcard . '/configure'] = array(
+      'title' => 'Configure',
+      'page callback' => 'entity_ui_get_form',
+      'page arguments' => array($this->entityType, $id_count + 1, 'configure'),
+      'load arguments' => array($this->entityType),
+      'access callback' => 'entity_access',
+      'access arguments' => array('edit', $this->entityType),
+      'file' => $this->entityInfo['admin ui']['file'],
+      'file path' => drupal_get_path('module', $this->entityInfo['module']),
+    );
+
     return $items;
+  }
+
+  /**
+   * Overrides EntityDefaultUIController::overviewTable().
+   */
+  public function overviewTable($conditions = array()) {
+    $entities = entity_load($this->entityType, FALSE, $conditions);
+    ksort($entities);
+
+    $rows = array();
+    foreach ($entities as $entity) {
+      $rows[] = $this->overviewTableRow($conditions, entity_id($this->entityType, $entity), $entity);
+    }
+    // Assemble the right table header.
+    $header = array(t('Label'));
+    $header[] = t('Type');
+    $colspan = 5;
+    $header[] = array('data' => t('Operations'), 'colspan' => $colspan);
+
+    $render = array(
+      '#theme' => 'table',
+      '#header' => $header,
+      '#rows' => $rows,
+      '#empty' => t('None.'),
+    );
+    return $render;
+  }
+
+  /**
+   * Overrides EntityDefaultUIController::overviewTableRow().
+   */
+  protected function overviewTableRow($conditions, $id, $entity, $additional_cols = array()) {
+    $entity_uri = entity_uri($this->entityType, $entity);
+
+    $row[] = array('data' => array(
+      '#theme' => 'ocl_overview_item',
+      '#label' => entity_label($this->entityType, $entity),
+      '#name' => !empty($this->entityInfo['exportable']) ? entity_id($this->entityType, $entity) : FALSE,
+      '#status' => $entity->{$this->statusKey},
+    ));
+
+    // Add in any passed additional cols.
+    foreach ($additional_cols as $col) {
+      $row[] = $col;
+    }
+
+    // Add a row for the exportable status.
+    $types = ocl_type_get_name();
+    $row[] = $types[$entity->type];
+
+    // Add operations depending on the status.
+    if (entity_has_status($this->entityType, $entity, ENTITY_FIXED)) {
+      $row[] = array('data' => l(t('clone'), $this->path . '/manage/' . $id . '/clone'), 'colspan' => 5);
+    }
+    else {
+      $row[] = l(t('edit'), $this->path . '/manage/' . $id);
+      $row[] = l(t('configure'), $this->path . '/manage/' . $id . '/configure');
+      $row[] = l(t('clone'), $this->path . '/manage/' . $id . '/clone');
+      if (empty($this->entityInfo['exportable']) || !entity_has_status($this->entityType, $entity, ENTITY_IN_CODE)) {
+        $row[] = l(t('delete'), $this->path . '/manage/' . $id . '/delete', array('query' => drupal_get_destination()));
+      }
+      elseif (entity_has_status($this->entityType, $entity, ENTITY_OVERRIDDEN)) {
+        $row[] = l(t('revert'), $this->path . '/manage/' . $id . '/revert', array('query' => drupal_get_destination()));
+      }
+      else {
+        $row[] = '';
+      }
+    }
+    $row[] = l(t('export'), $this->path . '/manage/' . $id . '/export');
+    return $row;
+  }
+
+  /**
+   * Generates the render array for a overview table of list types (bundles).
+   *
+   * @return Array
+   *   A renderable array.
+   */
+  public function overviewTypesTable() {
+    drupal_set_title(t('@label types', array('@label' => $this->entityInfo['label'])));
+
+    $types = ocl_type_get_name();
+    $field_ui = module_exists('field_ui');
+
+    $header = array(t('Name'));
+    if ($field_ui) {
+      $header[] = array('data' => t('Operations'), 'colspan' => '2');
+    }
+
+    $rows = array();
+    foreach ($types as $type => $name) {
+      $row = array($name);
+
+      if ($field_ui) {
+        $row[] = array('data' => l(t('manage fields'), $this->path . '/types/manage/' . $type . '/fields'));
+        $row[] = array('data' => l(t('manage display'), $this->path . '/types/manage/' . $type . '/display'));
+      }
+
+      $rows[] = $row;
+    }
+
+    $render = array(
+      '#theme' => 'table',
+      '#header' => $header,
+      '#rows' => $rows,
+      '#empty' => t('None.'),
+    );
+    return $render;
   }
 }
 
 /**
- * Generates the list editing form.
+ * Generates the list add/configure/clone form.
  */
 function ocl_form($form, &$form_state, $list, $op = 'edit') {
   global $user;
+
+  // We're using a different form the 'edit' operation because it only provides
+  // access to entity fields.
+  if ($op == 'edit') {
+    return ocl_edit_form($form, $form_state, $list);
+  }
 
   if ($op == 'clone') {
     $list->label .= ' (cloned)';
@@ -69,24 +222,13 @@ function ocl_form($form, &$form_state, $list, $op = 'edit') {
     '#default_value' => $list->type,
   );
 
-  if (!isset($list->is_new)) {
-    field_attach_form('ocl', $list, $form, $form_state);
-  }
-
   $form['actions'] = array('#type' => 'actions');
   $form['actions']['submit'] = array(
     '#type' => 'submit',
-    '#value' => t('Save list'),
+    '#value' => t('Save'),
     '#weight' => 40,
   );
   return $form;
-}
-
-/**
- * Validation callback.
- */
-function ocl_form_validate($form, &$form_state) {
-  entity_form_field_validate('ocl', $form, $form_state);
 }
 
 /**
@@ -97,4 +239,90 @@ function ocl_form_submit(&$form, &$form_state) {
   // Save and go back.
   $list->save();
   $form_state['redirect'] = 'admin/structure/ocl';
+}
+
+/**
+ * Generates the list edit form.
+ */
+function ocl_edit_form($form, &$form_state, $list) {
+  field_attach_form('ocl', $list, $form, $form_state);
+
+  // Entity type (bundle) is needed by entity_form_submit_build_entity().
+  $form['type'] = array(
+    '#type' => 'value',
+    '#default_value' => $list->type,
+  );
+
+  $form['actions'] = array('#type' => 'actions');
+  $form['actions']['submit'] = array(
+    '#type' => 'submit',
+    '#value' => t('Save'),
+    '#weight' => 40,
+  );
+
+  $form['#validate'][] = 'ocl_edit_form_validate';
+  $form['#submit'][] = 'ocl_form_submit';
+
+  return $form;
+}
+
+/**
+ * Validation callback.
+ */
+function ocl_edit_form_validate($form, &$form_state) {
+  entity_form_field_validate('ocl', $form, $form_state);
+}
+
+/**
+ * Displays the list types overview page.
+ *
+ * @see OclUIController::overviewTypesTable()
+ */
+function ocl_overview_types($entity_type) {
+  return entity_ui_controller($entity_type)->overviewTypesTable();
+}
+
+/**
+ * Returns HTML for a list on the entity overview listing.
+ *
+ * @ingroup themeable
+ */
+function theme_ocl_overview_item($variables) {
+  $output = '<strong>' . check_plain($variables['label']) . '</strong>';
+  if ($variables['name']) {
+    $output .= ' <small> (' . t('Machine name') . ': ' . check_plain($variables['name']) . ')</small>';
+  }
+  $output = '<div class="ocl-title">' . $output . '</div>';
+  if ($variables['status']) {
+    $output .= '<div class="ocl-status">' . theme('ocl_status', array('status' => $variables['status'], TRUE)) . '</div>';
+  }
+  return $output;
+}
+
+/**
+ * Themes the exportable status of a list.
+ */
+function theme_ocl_status($variables) {
+  $status = $variables['status'];
+  $html = $variables['html'];
+  if (($status & ENTITY_FIXED) == ENTITY_FIXED) {
+    $label = t('Fixed');
+    $help = t('The configuration is fixed and cannot be changed.');
+    return $html ? "<span class='ocl-status-fixed' title='$help'>" . $label . "</span>" : $label;
+  }
+  elseif (($status & ENTITY_OVERRIDDEN) == ENTITY_OVERRIDDEN) {
+    $label = t('Database overriding code');
+    $help = t('This configuration is provided by a module, but has been changed.');
+    return $html ? "<span class='ocl-status-overridden' title='$help'>" . $label . "</span>" : $label;
+  }
+  elseif ($status & ENTITY_IN_CODE) {
+    $label = t('In code');
+    $help = t('A module provides this configuration.');
+    return $html ? "<span class='ocl-status-default' title='$help'>" . $label . "</span>" : $label;
+  }
+  elseif ($status & ENTITY_CUSTOM) {
+    $label = t('In database');
+    $help = t('A custom configuration by a user.');
+    return $html ? "<span class='ocl-status-custom' title='$help'>" . $label . "</span>" : $label;
+  }
 }

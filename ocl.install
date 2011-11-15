@@ -55,6 +55,13 @@ function ocl_schema() {
         'default' => '',
         'description' => 'The type (bundle) of this list.',
       ),
+      'sublist' => array(
+        'type' => 'int',
+        'not null' => TRUE,
+        'default' => 0,
+        'size' => 'tiny',
+        'description' => 'The list relationship status of this list.',
+      ),
       'label' => array(
         'type' => 'varchar',
         'length' => 255,
@@ -116,8 +123,8 @@ function ocl_schema() {
     ),
   );
 
-//  $schema['cache_entity_ocl'] = drupal_get_schema_unprocessed('system', 'cache');
-//  $schema['cache_entity_ocl']['description'] = t('Cache table for the Orderable content list module.');
+  $schema['cache_entity_ocl'] = drupal_get_schema_unprocessed('system', 'cache');
+  $schema['cache_entity_ocl']['description'] = t('Cache table for the Orderable content list module.');
 
   return $schema;
 }
@@ -128,7 +135,7 @@ function ocl_schema() {
 function ocl_install() {
   // Add an entityreference field to ocl bundles.
   foreach (ocl_type_get_name() as $type => $name) {
-    _ocl_create_entityreference_instance('ocl_entity', 'ocl', $type, t('List items'), 0);
+    _ocl_create_entityreference_field("ocl_{$type}_entity", 'ocl', $type, t('List items'), 0);
   }
 }
 
@@ -136,8 +143,10 @@ function ocl_install() {
  * Implements hook_uninstall().
  */
 function ocl_uninstall() {
-  // Delete the ocl_entity field.
-  field_delete_field('ocl_entity');
+  // Delete all ocl_{$entity_type}_entity fields.
+  foreach (ocl_type_get_name() as $type => $name) {
+    field_delete_field("ocl_{$type}_entity");
+  }
 
   // @todo: Remove our variables.
 }
@@ -160,7 +169,7 @@ function ocl_uninstall() {
  * @param $display
  *   An array of default display data used for the entity's current view modes.
  */
-function _ocl_create_entityreference_instance($field_name, $entity_type, $bundle, $label, $weight = 0, $display = array()) {
+function _ocl_create_entityreference_field($field_name, $entity_type, $bundle, $label, $weight = 0, $display = array()) {
   // If a field type we know should exist isn't found, clear the Field cache.
   if (!field_info_field_types('entityreference')) {
     field_cache_clear();
@@ -194,9 +203,7 @@ function _ocl_create_entityreference_instance($field_name, $entity_type, $bundle
 
       'label' => $label,
       'required' => FALSE,
-      'settings' => array(
-        'target_type' => $bundle,
-      ),
+      'settings' => array(),
 
       'widget' => array(
         'type' => 'entityreference_autocomplete',

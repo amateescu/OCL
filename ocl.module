@@ -69,21 +69,13 @@ function ocl_entity_info() {
       ),
       'metadata controller class' => '',
       'access callback' => 'ocl_access',
-//      'access arguments' => array(
-//        'user key' => 'uid',
-//        'access tag' => 'ocl_access',
-//      ),
-//      'permission labels' => array(
-//        'singular' => t('list'),
-//        'plural' => t('lists'),
-//      ),
       'export' => array(
         'default hook' => 'ocl_default_lists'
       ),
       'admin ui' => array(
         'path' => 'admin/structure/ocl',
         'file' => 'includes/ocl.admin.inc',
-//        'controller class' => 'OclUIController',
+        'controller class' => 'OclUIController',
       ),
     ),
   );
@@ -91,6 +83,12 @@ function ocl_entity_info() {
   foreach (ocl_type_get_name() as $type => $name) {
     $return['ocl']['bundles'][$type] = array(
       'label' => $name,
+      'admin' => array(
+        'path' => 'admin/structure/ocl/types/manage/%',
+        'real path' => 'admin/structure/ocl/types/manage/' . $type,
+        'bundle argument' => 5,
+        'access arguments' => array('administer content types'),
+      ),
     );
   }
 
@@ -104,11 +102,33 @@ function ocl_entity_info() {
 }
 
 /**
+ * Implements hook_entity_property_info().
+ */
+function ocl_entity_property_info() {
+  $info = array();
+  $properties = &$info['ocl']['properties'];
+
+  $properties = array(
+    'ocl_type' => array(
+      'label' => t('List type'),
+      'type' => 'token',
+      'description' => t("The type of the list."),
+      'setter callback' => 'entity_property_verbatim_set',
+      'setter permission' => 'administer nodes',
+      'options list' => 'ocl_type_get_name',
+      'required' => TRUE,
+      'schema field' => 'type',
+    ),
+  );
+
+  return $info;
+}
+
+/**
  * Access callback for the entity API.
  */
 function ocl_access($op, $type = NULL, $account = NULL) {
   return TRUE;
-//  return user_access('administer profile types', $account);
 }
 
 
@@ -207,7 +227,7 @@ function ocl_load_multiple($list_ids = array(), $conditions = array(), $reset = 
  */
 function ocl_type_get_name() {
   return array(
-    'node' => 'Node',
+    'node' => 'Content',
     'user' => 'User',
   );
 }
@@ -254,9 +274,52 @@ function ocl_ocl_default_lists() {
     '{
       "name" : "nodequeue",
       "type" : "user",
-      "label" : "nodequeue",
+      "sublist" : "1",
+      "label" : "Nodequeue",
       "sublist_label" : "nodequeue",
       "parent_name" : null,
+      "min_size" : "0",
+      "max_size" : "0",
+      "uid" : "1",
+      "rdf_mapping" : []
+    }');
+
+  $lists['smartqueue'] = entity_import('ocl',
+    '{
+      "name" : "smartqueue",
+      "type" : "node",
+      "sublist" : "0",
+      "label" : "Smartqueue",
+      "sublist_label" : "smartqueue",
+      "parent_name" : null,
+      "min_size" : "0",
+      "max_size" : "0",
+      "uid" : "1",
+      "rdf_mapping" : []
+    }');
+
+  $lists['smartqueue_1'] = entity_import('ocl',
+    '{
+      "name" : "smartqueue_1",
+      "type" : "node",
+      "sublist" : "0",
+      "label" : "Smartqueue 1",
+      "sublist_label" : "smartqueue",
+      "parent_name" : "smartqueue",
+      "min_size" : "0",
+      "max_size" : "0",
+      "uid" : "1",
+      "rdf_mapping" : []
+    }');
+
+  $lists['smartqueue_2'] = entity_import('ocl',
+    '{
+      "name" : "smartqueue_2",
+      "type" : "node",
+      "sublist" : "0",
+      "label" : "Smartqueue 2",
+      "sublist_label" : "smartqueue",
+      "parent_name" : "smartqueue",
       "min_size" : "0",
       "max_size" : "0",
       "uid" : "1",
@@ -268,4 +331,20 @@ function ocl_ocl_default_lists() {
 
 function ocl_form_alter(&$form, &$form_state, $form_id) {
 //  dsm($form_id);
+}
+
+/**
+ * Implements hook_theme().
+ */
+function ocl_theme() {
+  return array(
+    'ocl_overview_item' => array(
+      'variables' => array('label' => NULL, 'name' => FALSE, 'status' => FALSE),
+      'file' => 'includes/ocl.admin.inc'
+    ),
+    'ocl_status' => array(
+      'variables' => array('status' => NULL, 'html' => TRUE),
+      'file' => 'includes/ocl.admin.inc'
+    ),
+  );
 }
