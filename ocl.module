@@ -5,11 +5,11 @@
  * Allows users to collect entities in an arbitrarily ordered list.
  */
 
-//function ocl_ctools_plugin_directory($module, $plugin) {
-//  if ($module == 'ctools' && $plugin == 'export_ui') {
-//    return 'plugins/' . $plugin;
-//  }
-//}
+function ocl_ctools_plugin_directory($module, $plugin) {
+  if ($module == 'entityreference') {
+    return 'plugins/' . $plugin;
+  }
+}
 
 /**
  * Implements hook_menu().
@@ -279,7 +279,7 @@ function ocl_ocl_default_lists() {
       "sublist_label" : "nodequeue",
       "parent_name" : null,
       "min_size" : "0",
-      "max_size" : "0",
+      "max_size" : "5",
       "uid" : "1",
       "rdf_mapping" : []
     }');

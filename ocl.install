@@ -190,6 +190,7 @@ function _ocl_create_entityreference_field($field_name, $entity_type, $bundle, $
       'locked' => TRUE,
       'settings' => array(
         'target_type' => $bundle,
+//        'handler' => 'OclHandler_base',
       ),
     );
     $field = field_create_field($field);
