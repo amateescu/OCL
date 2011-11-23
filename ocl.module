@@ -253,8 +253,25 @@ class OCL extends Entity {
   public function isLocked() {
     return isset($this->status) && empty($this->is_new) && (($this->status & ENTITY_IN_CODE) || ($this->status & ENTITY_FIXED));
   }
-}
 
+  /**
+   * Returns wether the list properties are editable, which is TRUE only for
+   * parent lists.
+   *
+   * Only the list fields are editable for sublists.
+   */
+  public function isEditable() {
+    return $this->parent_name == NULL;
+  }
+
+  /**
+   * Returns wether the list holds more than one sublist, thus it's fields
+   * may not be edited.
+   */
+  public function hasChildren() {
+    return $this->parent_name == NULL && $this->sublist == 0;
+  }
+}
 
 /**
  * Implements hook_ocl_default_lists().
@@ -294,7 +311,7 @@ function ocl_ocl_default_lists() {
     '{
       "name" : "smartqueue_1",
       "type" : "node",
-      "sublist" : "0",
+      "sublist" : "1",
       "label" : "Smartqueue 1",
       "sublist_label" : "smartqueue",
       "parent_name" : "smartqueue",
@@ -308,7 +325,7 @@ function ocl_ocl_default_lists() {
     '{
       "name" : "smartqueue_2",
       "type" : "node",
-      "sublist" : "0",
+      "sublist" : "1",
       "label" : "Smartqueue 2",
       "sublist_label" : "smartqueue",
       "parent_name" : "smartqueue",

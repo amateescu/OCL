@@ -82,7 +82,7 @@ class OclUIController extends EntityDefaultUIController {
   }
 
   /**
-   * Overrides EntityDefaultUIController::hook_forms().
+   * Overrides EntityDefaultUIController::overviewForm().
    */
   public function overviewForm($form, &$form_state) {
     $conditions = array();
@@ -99,7 +99,11 @@ class OclUIController extends EntityDefaultUIController {
    * Overrides EntityDefaultUIController::overviewTable().
    */
   public function overviewTable($conditions = array()) {
-    $entities = ocl_overview_lists($conditions);
+    // Set some defaults for the $conditions array.
+    $conditions += array(
+      'parent_name' => NULL,
+    );
+    $entities = ocl_load_multiple(array(), $conditions);
     ksort($entities);
 
     $rows = array();
@@ -148,25 +152,32 @@ class OclUIController extends EntityDefaultUIController {
       $row[] = array('data' => l(t('clone'), $this->path . '/manage/' . $name . '/clone'), 'colspan' => 5);
     }
     else {
-      if ($entity->parent_name == NULL && $entity->sublist == 0) {
+      if ($entity->hasChildren()) {
         $row[] = l(t('view sublists'), $this->path . '/manage/' . $name . '/view');
       }
       else {
         $row[] = l(t('edit items'), $this->path . '/manage/' . $name);
       }
-      $row[] = l(t('configure'), $this->path . '/manage/' . $name . '/configure');
-      $row[] = l(t('clone'), $this->path . '/manage/' . $name . '/clone');
-      if (empty($this->entityInfo['exportable']) || !entity_has_status($this->entityType, $entity, ENTITY_IN_CODE)) {
-        $row[] = l(t('delete'), $this->path . '/manage/' . $name . '/delete', array('query' => drupal_get_destination()));
-      }
-      elseif (entity_has_status($this->entityType, $entity, ENTITY_OVERRIDDEN)) {
-        $row[] = l(t('revert'), $this->path . '/manage/' . $name . '/revert', array('query' => drupal_get_destination()));
+
+      if ($entity->isEditable()) {
+        $row[] = l(t('configure'), $this->path . '/manage/' . $name . '/configure');
+        $row[] = l(t('clone'), $this->path . '/manage/' . $name . '/clone');
+        if (empty($this->entityInfo['exportable']) || !entity_has_status($this->entityType, $entity, ENTITY_IN_CODE)) {
+          $row[] = l(t('delete'), $this->path . '/manage/' . $name . '/delete', array('query' => drupal_get_destination()));
+        }
+        elseif (entity_has_status($this->entityType, $entity, ENTITY_OVERRIDDEN)) {
+          $row[] = l(t('revert'), $this->path . '/manage/' . $name . '/revert', array('query' => drupal_get_destination()));
+        }
+        else {
+          $row[] = '';
+        }
+        $row[] = l(t('export'), $this->path . '/manage/' . $name . '/export');
       }
       else {
-        $row[] = '';
+        $row[] = array('data'=> '', 'colspan' => 4);
       }
     }
-    $row[] = l(t('export'), $this->path . '/manage/' . $name . '/export');
+
     return $row;
   }
 
@@ -243,7 +254,7 @@ function ocl_form($form, &$form_state, $list, $op = 'edit') {
 
   // We're using a different form the 'edit' operation because it only provides
   // access to entity fields.
-  if ($op == 'edit') {
+  if ($op == 'edit' && !$list->hasChildren()) {
     return ocl_edit_form($form, $form_state, $list);
   }
 
@@ -299,7 +310,10 @@ function ocl_form($form, &$form_state, $list, $op = 'edit') {
   $form['actions']['submit'] = array(
     '#type' => 'submit',
     '#value' => t('Save'),
-    '#weight' => 40,
+  );
+  $form['actions']['cancel'] = array(
+    '#type' => 'submit',
+    '#value' => t('Cancel'),
   );
   return $form;
 }
@@ -308,9 +322,11 @@ function ocl_form($form, &$form_state, $list, $op = 'edit') {
  * Form API submit callback for the list form.
  */
 function ocl_form_submit(&$form, &$form_state) {
-  $list = entity_ui_form_submit_build_entity($form, $form_state);
-  // Save and go back.
-  $list->save();
+  if ($form_state['values']['op'] != t('Cancel')) {
+    $list = entity_ui_form_submit_build_entity($form, $form_state);
+    $list->save();
+  }
+  // Go back to the list overview.
   $form_state['redirect'] = 'admin/structure/ocl';
 }
 
@@ -344,18 +360,6 @@ function ocl_edit_form($form, &$form_state, $list) {
  */
 function ocl_edit_form_validate($form, &$form_state) {
   entity_form_field_validate('ocl', $form, $form_state);
-}
-
-function ocl_overview_lists($conditions = array()) {
-  // Set some defaults for the $conditions array.
-  $conditions += array(
-    'parent_name' => NULL,
-  );
-  return ocl_load_multiple(array(), $conditions);
-}
-
-function ocl_overview_sublists($list) {
-  
 }
 
 /**
