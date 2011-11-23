@@ -27,8 +27,7 @@ class OclUIController extends EntityDefaultUIController {
       'title' => $this->entityInfo['label'] . ' types',
       'page callback' => 'ocl_overview_types',
       'page arguments' => array($this->entityType),
-      'access arguments' => array('administer content types'),
-//      'access arguments' => array('administer ocl types'),
+      'access arguments' => array('administer list types'),
       'type' => MENU_LOCAL_TASK,
       'file' => $this->entityInfo['admin ui']['file'],
       'file path' => drupal_get_path('module', $this->entityInfo['module']),
@@ -38,7 +37,22 @@ class OclUIController extends EntityDefaultUIController {
       'description' => 'Manage settings for the type of lists used on your site.',
     );
 
-    // Add the list configure form.
+    // View form, a special case for the overview form that now shows
+    // the sublists.
+    $items[$this->path . '/manage/' . $wildcard . '/view'] = array(
+      'title callback' => 'ocl_get_page_title',
+      'title arguments' => array('view', $this->entityType, $id_count + 1),
+      'page callback' => 'drupal_get_form',
+      'page arguments' => array($this->entityType . '_overview_form', $this->entityType, $id_count + 1),
+      'load arguments' => array($this->entityType),
+      'access callback' => 'entity_access',
+      'access arguments' => array('view', $this->entityType),
+      'file' => $this->entityInfo['admin ui']['file'],
+      'file path' => drupal_get_path('module', $this->entityInfo['module']),
+    );
+
+    // Configure form, a special form for editing the properties of a list.
+    // Fields are handled in the regular edit form.
     $items[$this->path . '/manage/' . $wildcard . '/configure'] = array(
       'title' => 'Configure',
       'page callback' => 'entity_ui_get_form',
@@ -54,10 +68,38 @@ class OclUIController extends EntityDefaultUIController {
   }
 
   /**
+   * Overrides EntityDefaultUIController::hook_forms().
+   */
+  public function hook_forms() {
+    $forms = parent::hook_forms();
+
+    $forms[$this->entityType . '_overview_form'] = array(
+      'callback' => $this->entityType . '_overview_form',
+      'wrapper_callback' => 'entity_ui_form_defaults',
+    );
+
+    return $forms;
+  }
+
+  /**
+   * Overrides EntityDefaultUIController::hook_forms().
+   */
+  public function overviewForm($form, &$form_state) {
+    $conditions = array();
+    if (isset($form_state[$this->entityType])) {
+      $conditions = array(
+        'parent_name' => $form_state[$this->entityType]->name,
+      );
+    }
+    $form['table'] = $this->overviewTable($conditions);
+    return $form;
+  }
+
+  /**
    * Overrides EntityDefaultUIController::overviewTable().
    */
   public function overviewTable($conditions = array()) {
-    $entities = entity_load($this->entityType, FALSE, $conditions);
+    $entities = ocl_overview_lists($conditions);
     ksort($entities);
 
     $rows = array();
@@ -82,7 +124,7 @@ class OclUIController extends EntityDefaultUIController {
   /**
    * Overrides EntityDefaultUIController::overviewTableRow().
    */
-  protected function overviewTableRow($conditions, $id, $entity, $additional_cols = array()) {
+  protected function overviewTableRow($conditions, $name, $entity, $additional_cols = array()) {
     $entity_uri = entity_uri($this->entityType, $entity);
 
     $row[] = array('data' => array(
@@ -103,23 +145,28 @@ class OclUIController extends EntityDefaultUIController {
 
     // Add operations depending on the status.
     if (entity_has_status($this->entityType, $entity, ENTITY_FIXED)) {
-      $row[] = array('data' => l(t('clone'), $this->path . '/manage/' . $id . '/clone'), 'colspan' => 5);
+      $row[] = array('data' => l(t('clone'), $this->path . '/manage/' . $name . '/clone'), 'colspan' => 5);
     }
     else {
-      $row[] = l(t('edit'), $this->path . '/manage/' . $id);
-      $row[] = l(t('configure'), $this->path . '/manage/' . $id . '/configure');
-      $row[] = l(t('clone'), $this->path . '/manage/' . $id . '/clone');
+      if ($entity->parent_name == NULL && $entity->sublist == 0) {
+        $row[] = l(t('view sublists'), $this->path . '/manage/' . $name . '/view');
+      }
+      else {
+        $row[] = l(t('edit items'), $this->path . '/manage/' . $name);
+      }
+      $row[] = l(t('configure'), $this->path . '/manage/' . $name . '/configure');
+      $row[] = l(t('clone'), $this->path . '/manage/' . $name . '/clone');
       if (empty($this->entityInfo['exportable']) || !entity_has_status($this->entityType, $entity, ENTITY_IN_CODE)) {
-        $row[] = l(t('delete'), $this->path . '/manage/' . $id . '/delete', array('query' => drupal_get_destination()));
+        $row[] = l(t('delete'), $this->path . '/manage/' . $name . '/delete', array('query' => drupal_get_destination()));
       }
       elseif (entity_has_status($this->entityType, $entity, ENTITY_OVERRIDDEN)) {
-        $row[] = l(t('revert'), $this->path . '/manage/' . $id . '/revert', array('query' => drupal_get_destination()));
+        $row[] = l(t('revert'), $this->path . '/manage/' . $name . '/revert', array('query' => drupal_get_destination()));
       }
       else {
         $row[] = '';
       }
     }
-    $row[] = l(t('export'), $this->path . '/manage/' . $id . '/export');
+    $row[] = l(t('export'), $this->path . '/manage/' . $name . '/export');
     return $row;
   }
 
@@ -160,6 +207,32 @@ class OclUIController extends EntityDefaultUIController {
     );
     return $render;
   }
+}
+
+/**
+ * Form builder function for the overview form.
+ *
+ * @see EntityDefaultUIController::overviewForm()
+ */
+function ocl_overview_form($form, &$form_state, $entity_type, $entity = NULL) {
+  // Store the entity in $form_state so we're able to get its sublists in the
+  // overview table.
+  if ($entity) {
+    $form_state[$entity_type] = $entity;
+  }
+  return entity_ui_controller($entity_type)->overviewForm($form, $form_state);
+}
+
+/**
+ * Gets the page title for the passed operation.
+ */
+function ocl_get_page_title($op, $entity_type, $entity = NULL) {
+  $label = entity_label($entity_type, $entity);
+  switch ($op) {
+    case 'view':
+      return t('@label', array('@label' => $label));
+  }
+  return '';
 }
 
 /**
@@ -271,6 +344,18 @@ function ocl_edit_form($form, &$form_state, $list) {
  */
 function ocl_edit_form_validate($form, &$form_state) {
   entity_form_field_validate('ocl', $form, $form_state);
+}
+
+function ocl_overview_lists($conditions = array()) {
+  // Set some defaults for the $conditions array.
+  $conditions += array(
+    'parent_name' => NULL,
+  );
+  return ocl_load_multiple(array(), $conditions);
+}
+
+function ocl_overview_sublists($list) {
+  
 }
 
 /**
