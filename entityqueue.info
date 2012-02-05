@@ -1,0 +1,14 @@
+name = Entityqueue
+description = Allows users to collect entities in arbitrarily ordered lists.
+package = Entityqueue
+core = 7.x
+;configure = admin/structure/entityqueue/settings
+
+dependencies[] = system (>7.11)
+dependencies[] = ctools
+dependencies[] = entity
+dependencies[] = entityreference
+
+; Entity API controllers.
+files[] = includes/entityqueue.controller.inc
+files[] = includes/entityqueue.admin.inc

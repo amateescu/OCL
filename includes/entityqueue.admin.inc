@@ -3,7 +3,7 @@
 /**
  * UI controller.
  */
-class OclUIController extends EntityDefaultUIController {
+class EntityQueueUIController extends EntityDefaultUIController {
 
   /**
    * Overrides EntityDefaultUIController::hook_menu().
@@ -15,50 +15,44 @@ class OclUIController extends EntityDefaultUIController {
     $wildcard = isset($this->entityInfo['admin ui']['menu wildcard']) ? $this->entityInfo['admin ui']['menu wildcard'] : '%entity_object';
     $plural_label = isset($this->entityInfo['plural label']) ? $this->entityInfo['plural label'] : $this->entityInfo['label'] . 's';
 
-    $items[$this->path]['description'] = 'Manage orderable content lists.';
-
-    $items[$this->path . '/lists'] = array(
-      'title' => $plural_label,
-      'type' => MENU_DEFAULT_LOCAL_TASK,
-      'weight' => -10,
-    );
+    $items[$this->path]['description'] = 'Manage entityqueues.';
 
     $items[$this->path . '/types'] = array(
       'title' => $this->entityInfo['label'] . ' types',
-      'page callback' => 'ocl_overview_types',
+      'page callback' => 'entityqueue_overview_types',
       'page arguments' => array($this->entityType),
-      'access arguments' => array('administer list types'),
+      'access arguments' => array('administer queue types'),
       'type' => MENU_LOCAL_TASK,
       'file' => $this->entityInfo['admin ui']['file'],
       'file path' => drupal_get_path('module', $this->entityInfo['module']),
     );
     $items[$this->path . '/types/manage/%'] = array(
-      'title' => 'Manage list types',
-      'description' => 'Manage settings for the type of lists used on your site.',
+      'title' => 'Manage queue types',
+      'description' => 'Manage settings for queue types.',
     );
 
     // View form, a special case for the overview form that now shows
-    // the sublists.
+    // the subqueues.
     $items[$this->path . '/manage/' . $wildcard . '/view'] = array(
-      'title callback' => 'ocl_get_page_title',
+      'title callback' => 'entityqueue_get_page_title',
       'title arguments' => array('view', $this->entityType, $id_count + 1),
       'page callback' => 'drupal_get_form',
       'page arguments' => array($this->entityType . '_overview_form', $this->entityType, $id_count + 1),
       'load arguments' => array($this->entityType),
-      'access callback' => 'entity_access',
+      'access callback' => 'entityqueue_access',
       'access arguments' => array('view', $this->entityType),
       'file' => $this->entityInfo['admin ui']['file'],
       'file path' => drupal_get_path('module', $this->entityInfo['module']),
     );
 
-    // Configure form, a special form for editing the properties of a list.
+    // Configure form, a special form for editing the properties of a queue.
     // Fields are handled in the regular edit form.
     $items[$this->path . '/manage/' . $wildcard . '/configure'] = array(
       'title' => 'Configure',
       'page callback' => 'entity_ui_get_form',
       'page arguments' => array($this->entityType, $id_count + 1, 'configure'),
       'load arguments' => array($this->entityType),
-      'access callback' => 'entity_access',
+      'access callback' => 'entityqueue_access',
       'access arguments' => array('edit', $this->entityType),
       'file' => $this->entityInfo['admin ui']['file'],
       'file path' => drupal_get_path('module', $this->entityInfo['module']),
@@ -103,7 +97,7 @@ class OclUIController extends EntityDefaultUIController {
     $conditions += array(
       'parent_name' => NULL,
     );
-    $entities = ocl_load_multiple(array(), $conditions);
+    $entities = entityqueue_load_multiple(array(), $conditions);
     ksort($entities);
 
     $rows = array();
@@ -132,7 +126,7 @@ class OclUIController extends EntityDefaultUIController {
     $entity_uri = entity_uri($this->entityType, $entity);
 
     $row[] = array('data' => array(
-      '#theme' => 'ocl_overview_item',
+      '#theme' => 'entityqueue_overview_item',
       '#label' => entity_label($this->entityType, $entity),
       '#name' => !empty($this->entityInfo['exportable']) ? entity_id($this->entityType, $entity) : FALSE,
       '#status' => $entity->{$this->statusKey},
@@ -144,7 +138,7 @@ class OclUIController extends EntityDefaultUIController {
     }
 
     // Add a row for the exportable status.
-    $types = ocl_type_get_name();
+    $types = entityqueue_type_get_name();
     $row[] = $types[$entity->type];
 
     // Add operations depending on the status.
@@ -153,7 +147,7 @@ class OclUIController extends EntityDefaultUIController {
     }
     else {
       if ($entity->hasChildren()) {
-        $row[] = l(t('view sublists'), $this->path . '/manage/' . $name . '/view');
+        $row[] = l(t('view subqueues'), $this->path . '/manage/' . $name . '/view');
       }
       else {
         $row[] = l(t('edit items'), $this->path . '/manage/' . $name);
@@ -182,7 +176,7 @@ class OclUIController extends EntityDefaultUIController {
   }
 
   /**
-   * Generates the render array for a overview table of list types (bundles).
+   * Generates the render array for a overview table of queue types (bundles).
    *
    * @return Array
    *   A renderable array.
@@ -190,7 +184,7 @@ class OclUIController extends EntityDefaultUIController {
   public function overviewTypesTable() {
     drupal_set_title(t('@label types', array('@label' => $this->entityInfo['label'])));
 
-    $types = ocl_type_get_name();
+    $types = entityqueue_type_get_name();
     $field_ui = module_exists('field_ui');
 
     $header = array(t('Name'));
@@ -225,8 +219,8 @@ class OclUIController extends EntityDefaultUIController {
  *
  * @see EntityDefaultUIController::overviewForm()
  */
-function ocl_overview_form($form, &$form_state, $entity_type, $entity = NULL) {
-  // Store the entity in $form_state so we're able to get its sublists in the
+function entityqueue_overview_form($form, &$form_state, $entity_type, $entity = NULL) {
+  // Store the entity in $form_state so we're able to get its subqueues in the
   // overview table.
   if ($entity) {
     $form_state[$entity_type] = $entity;
@@ -237,7 +231,7 @@ function ocl_overview_form($form, &$form_state, $entity_type, $entity = NULL) {
 /**
  * Gets the page title for the passed operation.
  */
-function ocl_get_page_title($op, $entity_type, $entity = NULL) {
+function entityqueue_get_page_title($op, $entity_type, $entity = NULL) {
   $label = entity_label($entity_type, $entity);
   switch ($op) {
     case 'view':
@@ -247,50 +241,50 @@ function ocl_get_page_title($op, $entity_type, $entity = NULL) {
 }
 
 /**
- * Generates the list add/configure/clone form.
+ * Generates the queue add/configure/clone form.
  */
-function ocl_form($form, &$form_state, $list, $op = 'edit') {
+function entityqueue_form($form, &$form_state, $queue, $op = 'edit') {
   global $user;
 
   // We're using a different form the 'edit' operation because it only provides
   // access to entity fields.
-  if ($op == 'edit' && !$list->hasChildren()) {
-    return ocl_edit_form($form, $form_state, $list);
+  if ($op == 'edit' && !$queue->hasChildren()) {
+    return entityqueue_edit_form($form, $form_state, $queue);
   }
 
   if ($op == 'clone') {
-    $list->label .= ' (cloned)';
-    $list->name .= '_clone';
-    $list->status = ENTITY_CUSTOM;
+    $queue->label .= ' (cloned)';
+    $queue->name .= '_clone';
+    $queue->status = ENTITY_CUSTOM;
   }
 
   $form['label'] = array(
     '#title' => t('Label'),
     '#type' => 'textfield',
-    '#default_value' => $list->label,
+    '#default_value' => $queue->label,
   );
 
-  // Machine-readable list name.
+  // Machine-readable queue name.
   $form['name'] = array(
     '#type' => 'machine_name',
-    '#default_value' => isset($list->name) ? $list->name : '',
-    '#disabled' => $list->isLocked(),
+    '#default_value' => isset($queue->name) ? $queue->name : '',
+    '#disabled' => $queue->isLocked(),
     '#machine_name' => array(
-      'exists' => 'ocl_load',
+      'exists' => 'entityqueue_load',
       'source' => array('label'),
     ),
-    '#description' => t('A unique machine-readable name for this list. It must only contain lowercase letters, numbers, and underscores.'),
+    '#description' => t('A unique machine-readable name for this queue. It must only contain lowercase letters, numbers, and underscores.'),
   );
 
-  $form['sublist_label'] = array(
-    '#title' => t('Sublist label'),
+  $form['subqueue_label'] = array(
+    '#title' => t('Subqueue label'),
     '#type' => 'textfield',
-    '#default_value' => $list->sublist_label,
+    '#default_value' => $queue->subqueue_label,
   );
 
   $form['module'] = array(
     '#type' => 'hidden',
-    '#value' => isset($list->module) ? 'ocl' : '',
+    '#value' => isset($queue->module) ? 'entityqueue' : '',
   );
 
   $form['uid'] = array(
@@ -298,12 +292,12 @@ function ocl_form($form, &$form_state, $list, $op = 'edit') {
     '#value' => $user->uid,
   );
 
-  $types = ocl_type_get_name();
+  $types = entityqueue_type_get_name();
   $form['type'] = array(
     '#title' => t('Type'),
     '#type' => 'select',
     '#options' => $types,
-    '#default_value' => $list->type,
+    '#default_value' => $queue->type,
   );
 
   $form['actions'] = array('#type' => 'actions');
@@ -319,27 +313,27 @@ function ocl_form($form, &$form_state, $list, $op = 'edit') {
 }
 
 /**
- * Form API submit callback for the list form.
+ * Form API submit callback for the queue form.
  */
-function ocl_form_submit(&$form, &$form_state) {
+function entityqueue_form_submit(&$form, &$form_state) {
   if ($form_state['values']['op'] != t('Cancel')) {
-    $list = entity_ui_form_submit_build_entity($form, $form_state);
-    $list->save();
+    $queue = entity_ui_form_submit_build_entity($form, $form_state);
+    $queue->save();
   }
-  // Go back to the list overview.
-  $form_state['redirect'] = 'admin/structure/ocl';
+  // Go back to the queue overview.
+  $form_state['redirect'] = 'admin/structure/entityqueue';
 }
 
 /**
- * Generates the list edit form.
+ * Generates the queue edit form.
  */
-function ocl_edit_form($form, &$form_state, $list) {
-  field_attach_form('ocl', $list, $form, $form_state);
+function entityqueue_edit_form($form, &$form_state, $queue) {
+  field_attach_form('entityqueue', $queue, $form, $form_state);
 
   // Entity type (bundle) is needed by entity_form_submit_build_entity().
   $form['type'] = array(
     '#type' => 'value',
-    '#default_value' => $list->type,
+    '#default_value' => $queue->type,
   );
 
   $form['actions'] = array('#type' => 'actions');
@@ -349,8 +343,8 @@ function ocl_edit_form($form, &$form_state, $list) {
     '#weight' => 40,
   );
 
-  $form['#validate'][] = 'ocl_edit_form_validate';
-  $form['#submit'][] = 'ocl_form_submit';
+  $form['#validate'][] = 'entityqueue_edit_form_validate';
+  $form['#submit'][] = 'entityqueue_form_submit';
 
   return $form;
 }
@@ -358,60 +352,60 @@ function ocl_edit_form($form, &$form_state, $list) {
 /**
  * Validation callback.
  */
-function ocl_edit_form_validate($form, &$form_state) {
-  entity_form_field_validate('ocl', $form, $form_state);
+function entityqueue_edit_form_validate($form, &$form_state) {
+  entity_form_field_validate('entityqueue', $form, $form_state);
 }
 
 /**
- * Displays the list types overview page.
+ * Displays the queue types overview page.
  *
- * @see OclUIController::overviewTypesTable()
+ * @see entityqueueUIController::overviewTypesTable()
  */
-function ocl_overview_types($entity_type) {
+function entityqueue_overview_types($entity_type) {
   return entity_ui_controller($entity_type)->overviewTypesTable();
 }
 
 /**
- * Returns HTML for a list on the entity overview listing.
+ * Returns HTML for a queue on the entity overview listing.
  *
  * @ingroup themeable
  */
-function theme_ocl_overview_item($variables) {
+function theme_entityqueue_overview_item($variables) {
   $output = '<strong>' . check_plain($variables['label']) . '</strong>';
   if ($variables['name']) {
     $output .= ' <small> (' . t('Machine name') . ': ' . check_plain($variables['name']) . ')</small>';
   }
-  $output = '<div class="ocl-title">' . $output . '</div>';
+  $output = '<div class="entityqueue-title">' . $output . '</div>';
   if ($variables['status']) {
-    $output .= '<div class="ocl-status">' . theme('ocl_status', array('status' => $variables['status'], TRUE)) . '</div>';
+    $output .= '<div class="entityqueue-status">' . theme('entityqueue_status', array('status' => $variables['status'], TRUE)) . '</div>';
   }
   return $output;
 }
 
 /**
- * Themes the exportable status of a list.
+ * Themes the exportable status of a queue.
  */
-function theme_ocl_status($variables) {
+function theme_entityqueue_status($variables) {
   $status = $variables['status'];
   $html = $variables['html'];
   if (($status & ENTITY_FIXED) == ENTITY_FIXED) {
     $label = t('Fixed');
     $help = t('The configuration is fixed and cannot be changed.');
-    return $html ? "<span class='ocl-status-fixed' title='$help'>" . $label . "</span>" : $label;
+    return $html ? "<span class='entityqueue-status-fixed' title='$help'>" . $label . "</span>" : $label;
   }
   elseif (($status & ENTITY_OVERRIDDEN) == ENTITY_OVERRIDDEN) {
     $label = t('Database overriding code');
     $help = t('This configuration is provided by a module, but has been changed.');
-    return $html ? "<span class='ocl-status-overridden' title='$help'>" . $label . "</span>" : $label;
+    return $html ? "<span class='entityqueue-status-overridden' title='$help'>" . $label . "</span>" : $label;
   }
   elseif ($status & ENTITY_IN_CODE) {
     $label = t('In code');
     $help = t('A module provides this configuration.');
-    return $html ? "<span class='ocl-status-default' title='$help'>" . $label . "</span>" : $label;
+    return $html ? "<span class='entityqueue-status-default' title='$help'>" . $label . "</span>" : $label;
   }
   elseif ($status & ENTITY_CUSTOM) {
     $label = t('In database');
     $help = t('A custom configuration by a user.');
-    return $html ? "<span class='ocl-status-custom' title='$help'>" . $label . "</span>" : $label;
+    return $html ? "<span class='entityqueue-status-custom' title='$help'>" . $label . "</span>" : $label;
   }
 }

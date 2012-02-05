@@ -1,0 +1,368 @@
+<?php
+
+/**
+ * @file
+ * Allows users to collect entities in arbitrarily ordered lists.
+ */
+
+/**
+ * Implements hook_ctools_plugin_directory().
+ */
+function entityqueue_ctools_plugin_directory($module, $plugin) {
+  return 'plugins/' . $module . '/' . $plugin;
+}
+
+/**
+ * Implements hook_ctools_plugin_type().
+ */
+function entityqueue_ctools_plugin_type() {
+  $plugins['behavior'] = array('process' => 'entityqueue_behavior_plugin_process');
+  return $plugins;
+}
+
+/**
+ * CTools callback; Process the queue behavior plugin.
+ */
+function entityqueue_behavior_plugin_process(&$plugin, $info) {
+  $plugin += array(
+    'description' => '',
+    'queue type' => 'simple',
+    'access callback' => FALSE,
+    'force enabled' => FALSE,
+  );
+}
+
+/**
+ * Implements hook_permission().
+ */
+function entityqueue_permission() {
+  return array(
+    'administer queue types' => array(
+      'title' => t('Administer queue types'),
+    ),
+  );
+}
+
+/**
+ * Implements hook_menu().
+ */
+function entityqueue_menu() {
+  $items = array();
+
+  return $items;
+}
+
+/**
+ * Implements hook_entity_info().
+ */
+function entityqueue_entity_info() {
+  $return = array(
+    'entityqueue' => array(
+      'label' => t('Entityqueue'),
+      'plural label' => t('Entityqueues'),
+      'entity class' => 'EntityQueue',
+      'controller class' => 'EntityQueueEntityController',
+      'module' => 'entityqueue',
+      'base table' => 'entityqueue',
+      'load hook' => 'entityqueue_load',
+      'uri callback' => 'entityqueue_uri',
+      'label callback' => 'entityqueue_label',
+      'fieldable' => TRUE,
+      'exportable' => TRUE,
+      'entity keys' => array(
+        'id' => 'queue_id',
+        'bundle' => 'type',
+        'name' => 'name',
+        'label' => 'label',
+      ),
+      'bundles' => array(),
+      'bundle keys' => array(
+        'bundle' => 'type',
+      ),
+      'view modes' => array(
+        'full' => array(
+          'label' => t('queue'),
+          'custom settings' => FALSE,
+        ),
+      ),
+      'metadata controller class' => '',
+      'access callback' => 'entityqueue_access',
+      'export' => array(
+        'default hook' => 'entityqueue_default_queues'
+      ),
+      'admin ui' => array(
+        'path' => 'admin/structure/entityqueue',
+        'controller class' => 'EntityQueueUIController',
+        'file' => 'includes/entityqueue.admin.inc',
+      ),
+    ),
+  );
+
+  foreach (entityqueue_type_get_name() as $type => $name) {
+    $return['entityqueue']['bundles'][$type] = array(
+      'label' => $name,
+      'admin' => array(
+        'path' => 'admin/structure/entityqueue/types/manage/%',
+        'real path' => 'admin/structure/entityqueue/types/manage/' . $type,
+        'bundle argument' => 5,
+        'access arguments' => array('administer queue types'),
+      ),
+    );
+  }
+
+  // Support the Entity cache module.
+//  if (module_exists('entitycache')) {
+//    $return['entityqueue']['field cache'] = FALSE;
+//    $return['entityqueue']['entity cache'] = TRUE;
+//  }
+
+  return $return;
+}
+
+/**
+ * Implements hook_entity_property_info().
+ */
+function entityqueue_entity_property_info() {
+  $info = array();
+  $properties = &$info['entityqueue']['properties'];
+
+  $properties = array(
+    'entityqueue_type' => array(
+      'label' => t('queue type'),
+      'type' => 'token',
+      'description' => t("The type of the queue."),
+      'setter callback' => 'entity_property_verbatim_set',
+      'setter permission' => 'administer nodes',
+      'options queue' => 'entityqueue_type_get_name',
+      'required' => TRUE,
+      'schema field' => 'type',
+    ),
+  );
+
+  return $info;
+}
+
+/**
+ * Access callback for the entity API.
+ */
+function entityqueue_access($op, $type = NULL, $account = NULL) {
+  return TRUE;
+}
+
+
+/**
+ * Returns an initialized queue object.
+ *
+ * @param $type
+ *   The machine-readable type of the queue.
+ *
+ * @return
+ *   A queue object with all default fields initialized.
+ */
+function entityqueue_create($type = 'node') {
+  return entity_get_controller('entityqueue')->create(array('type' => $type));
+}
+
+/**
+ * Saves a queue.
+ *
+ * @param $queue
+ *   The full queue object to save.
+ *
+ * @return
+ *   SAVED_NEW or SAVED_UPDATED depending on the operation performed.
+ */
+function entityqueue_save(EntityQueue $queue) {
+  return entity_get_controller('entityqueue')->save($queue);
+}
+
+/**
+ * Loads a queue by name or by ID.
+ *
+ * @param $name
+ *   The name of a queue.
+ *
+ * @return
+ *   A EntityQueue object.
+ */
+function entityqueue_load($name = array()) {
+  if (empty($name)) {
+    return FALSE;
+  }
+
+  $queues = entityqueue_load_multiple(array($name));
+  return $queues ? reset($queues) : FALSE;
+}
+
+/**
+ * Loads multiple queues by name or ID or based on a set of matching conditions.
+ *
+ * @see entity_load()
+ *
+ * @param $names
+ *   An array of queue names.
+ * @param $conditions
+ *   An array of conditions on the {commerce_product} table in the form
+ *     'field' => $value.
+ * @param $reset
+ *   Whether to reset the internal queue loading cache.
+ *
+ * @return
+ *   An array of EntityQueue objects indexed by name.
+ *
+ * @todo: Add support for $reset in entity_load_multiple_by_name().
+ */
+function entityqueue_load_multiple($names = array(), $conditions = array(), $reset = FALSE) {
+  if (empty($names) && empty($conditions)) {
+    return array();
+  }
+
+  $queues = entity_load_multiple_by_name('entityqueue', (!empty($names) ? $names : FALSE), $conditions);
+  return !empty($queues) ? $queues : array();
+}
+
+/**
+ * Returns an array of queue types (bundles), keyed by name.
+ */
+function entityqueue_type_get_name() {
+  return array(
+    'node' => 'Content',
+    'user' => 'User',
+  );
+}
+
+/**
+ * Main class for queue entities.
+ */
+class EntityQueue extends Entity {
+  public $name;
+  public $type = 'node';
+  public $label;
+  public $subqueue_label = '';
+  public $module = 'entityqueue';
+  
+  public function __construct($values = array()) {
+    if (!isset($values['type'])) {
+      $values['type'] = $this->type;
+    }
+
+    parent::__construct($values, 'entityqueue');
+  }
+
+  /**
+   * Returns whether the queue is locked, thus may not be deleted or renamed.
+   *
+   * Queues provided in code are automatically treated as locked, as well
+   * as any fixed queue.
+   */
+  public function isLocked() {
+    return isset($this->status) && empty($this->is_new) && (($this->status & ENTITY_IN_CODE) || ($this->status & ENTITY_FIXED));
+  }
+
+  /**
+   * Returns whether the queue properties are editable, which is TRUE only for
+   * parent queues.
+   *
+   * Only the queue fields are editable for subqueues.
+   */
+  public function isEditable() {
+    return $this->parent_name == NULL;
+  }
+
+  /**
+   * Returns whether the queue holds more than one subqueue, thus it's fields
+   * may not be edited.
+   */
+  public function hasChildren() {
+    return $this->parent_name == NULL && $this->subqueue == 0;
+  }
+}
+
+/**
+ * Implements hook_entityqueue_default_queues().
+ *
+ * @return array
+ * A bunch of test queues.
+ */
+function entityqueue_entityqueue_default_queues() {
+  $queues = array();
+
+  $queues['nodequeue'] = entity_import('entityqueue',
+    '{
+      "name" : "nodequeue",
+      "type" : "user",
+      "subqueue" : "1",
+      "label" : "Nodequeue",
+      "subqueue_label" : "nodequeue",
+      "parent_name" : null,
+      "min_size" : "0",
+      "max_size" : "5",
+      "uid" : "1",
+      "rdf_mapping" : []
+    }');
+
+  $queues['smartqueue'] = entity_import('entityqueue',
+    '{
+      "name" : "smartqueue",
+      "type" : "node",
+      "subqueue" : "0",
+      "label" : "Smartqueue",
+      "subqueue_label" : "smartqueue",
+      "parent_name" : null,
+      "min_size" : "0",
+      "max_size" : "0",
+      "uid" : "1",
+      "rdf_mapping" : []
+    }');
+
+  $queues['smartqueue_1'] = entity_import('entityqueue',
+    '{
+      "name" : "smartqueue_1",
+      "type" : "node",
+      "subqueue" : "1",
+      "label" : "Smartqueue 1",
+      "subqueue_label" : "smartqueue",
+      "parent_name" : "smartqueue",
+      "min_size" : "0",
+      "max_size" : "0",
+      "uid" : "1",
+      "rdf_mapping" : []
+    }');
+
+  $queues['smartqueue_2'] = entity_import('entityqueue',
+    '{
+      "name" : "smartqueue_2",
+      "type" : "node",
+      "subqueue" : "1",
+      "label" : "Smartqueue 2",
+      "subqueue_label" : "smartqueue",
+      "parent_name" : "smartqueue",
+      "min_size" : "0",
+      "max_size" : "0",
+      "uid" : "1",
+      "rdf_mapping" : []
+    }');
+
+  return $queues;
+}
+
+/**
+ * Implements hook_form_alter().
+ */
+function entityqueue_form_alter(&$form, &$form_state, $form_id) { }
+
+/**
+ * Implements hook_theme().
+ */
+function entityqueue_theme() {
+  return array(
+    'entityqueue_overview_item' => array(
+      'variables' => array('label' => NULL, 'name' => FALSE, 'status' => FALSE),
+      'file' => 'includes/entityqueue.admin.inc'
+    ),
+    'entityqueue_status' => array(
+      'variables' => array('status' => NULL, 'html' => TRUE),
+      'file' => 'includes/entityqueue.admin.inc'
+    ),
+  );
+}
