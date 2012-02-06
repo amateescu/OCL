@@ -107,8 +107,8 @@ class EntityQueueUIController extends EntityDefaultUIController {
     // Assemble the right table header.
     $header = array(t('Label'));
     $header[] = t('Type');
-    $colspan = 5;
-    $header[] = array('data' => t('Operations'), 'colspan' => $colspan);
+    $header[] = t('Items');
+    $header[] = array('data' => t('Operations'), 'colspan' => 6);
 
     $render = array(
       '#theme' => 'table',
@@ -137,20 +137,32 @@ class EntityQueueUIController extends EntityDefaultUIController {
       $row[] = $col;
     }
 
-    // Add a row for the exportable status.
+    // Add a column for the queue type.
     $types = entityqueue_type_get_name();
     $row[] = $types[$entity->type];
 
-    // Add operations depending on the status.
-    if (entity_has_status($this->entityType, $entity, ENTITY_FIXED)) {
-      $row[] = array('data' => l(t('clone'), $this->path . '/manage/' . $name . '/clone'), 'colspan' => 5);
+    // Add a column for the number of items in the queue or the number of subqueues.
+    $items = field_get_items($this->entityType, $entity, 'entityqueue_target_' . $entity->type);
+    if (!$entity->hasChildren()) {
+      $row[] = format_plural((!empty($items) ? count($items) : 0), '1 item', '@count items');
     }
     else {
-      if ($entity->hasChildren()) {
-        $row[] = l(t('view subqueues'), $this->path . '/manage/' . $name . '/view');
+      // @todo: Show the number of subqueues.
+      $row[] = '';
+    }
+
+    // Add operations depending on the status.
+    if (entity_has_status($this->entityType, $entity, ENTITY_FIXED)) {
+      $row[] = array('data' => l(t('clone'), $this->path . '/manage/' . $name . '/clone'), 'colspan' => 6);
+    }
+    else {
+      if (!$entity->hasChildren()) {
+        $row[] = l(t('edit items'), $this->path . '/manage/' . $name);
+        $row[] = '';
       }
       else {
-        $row[] = l(t('edit items'), $this->path . '/manage/' . $name);
+        $row[] = '';
+        $row[] = l(t('view subqueues'), $this->path . '/manage/' . $name . '/view');
       }
 
       if ($entity->isEditable()) {
@@ -168,7 +180,7 @@ class EntityQueueUIController extends EntityDefaultUIController {
         $row[] = l(t('export'), $this->path . '/manage/' . $name . '/export');
       }
       else {
-        $row[] = array('data'=> '', 'colspan' => 4);
+        $row[] = array('data'=> '', 'colspan' => 5);
       }
     }
 
